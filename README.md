@@ -59,12 +59,13 @@ Then open **http://localhost:5000** or **http://127.0.0.1:5000** in your browser
 - Author lists on the Citations page are sometimes truncated with "…". Check
   **resolve truncated author lists** before fetching to have the app pull the
   full author list from each paper's detail page (slower — capped at 15
+- If the Ollama call fails (model not pulled, server not running, wrong
+  port), the app still computes G1/G2/G3 from the heuristic surname match and
+  tells you so in the status line next to "Compute G1 / G2 / G3".
+
 
   ## Citation
 If you use this repository in your research, please cite:
 
 Saatchi, D. (2026). *Anti-Engineered G-Indexes (G1, G2, G3): Graded Authorship-Filtered Citation Metrics for Researchers Forensics by AI-Agent and Google Scholar*. AI Journal of Arts & Metascience (AIJAM). https://github.com/danielsaatchi/G-indexes
   papers per fetch to stay polite to Scholar).
-- If the Ollama call fails (model not pulled, server not running, wrong
-  port), the app still computes G1/G2/G3 from the heuristic surname match and
-  tells you so in the status line next to "Compute G1 / G2 / G3".
