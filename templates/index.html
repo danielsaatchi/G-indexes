@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Citations — G-Index Metrics</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="gs-header">
+  <div class="gs-header-inner">
+    <span class="brand-title">
+      <span class="b-black">G</span><span class="b-black">-</span><span class="b-meta">Indexes</span>
+      <span class="brand-space"> </span>
+      <span class="b-black">Citations</span>
+    </span>
+    <span class="brand-subtitle">Powered by AI Agent and
+      <span class="g-logo"><span class="gl-1">G</span><span class="gl-2">o</span><span class="gl-3">o</span><span class="gl-1">g</span><span class="gl-4">l</span><span class="gl-2">e</span></span><span class="g-scholar"> Scholar</span>
+    </span>
+  </div>
+</header>
+
+<div class="gs-toolbar">
+  <div class="gs-toolbar-inner">
+    <label for="scholarUrlInput" class="toolbar-label">Google Scholar profile:</label>
+    <input id="scholarUrlInput" type="text" placeholder="https://scholar.google.com/citations?user=XXXXXXX&hl=en">
+    <button id="fetchBtn">Fetch profile</button>
+
+    <label for="modelInput" class="toolbar-label">Ollama model:</label>
+    <input id="modelInput" type="text" value="gemma4:e4b" placeholder="e.g. gemma4:e4b" style="max-width:160px;">
+    <label class="toolbar-label" style="display:flex;align-items:center;gap:4px;">
+      <input id="resolveTruncated" type="checkbox"> resolve truncated author lists
+    </label>
+  </div>
+  <div class="gs-toolbar-inner" style="margin-top:6px;">
+    <label for="ollamaUrlInput" class="toolbar-label">Ollama server:</label>
+    <input id="ollamaUrlInput" type="text" value="http://localhost:11434" style="max-width:220px;">
+    <span id="statusMsg" class="status-msg"></span>
+  </div>
+</div>
+
+<div id="profileSection" class="gs-main" style="display:none;">
+
+  <div class="profile-row">
+    <div class="avatar" id="avatarWrap">
+      <span id="avatarFallback">👤</span>
+      <img id="avatarImg" alt="" style="display:none;">
+    </div>
+    <div class="profile-info">
+      <h1 id="profName"></h1>
+      <div id="profAffil" class="profile-affil"></div>
+      <a id="profLink" class="profile-scholar-link" target="_blank" rel="noopener"></a>
+    </div>
+
+    <div class="stats-box">
+      <table class="stats-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>All</th>
+          </tr>
+        </thead>
+        <tbody id="statsBody">
+          <tr><td>Citations</td><td id="statCitations">–</td></tr>
+          <tr><td>h-index</td><td id="statH">–</td></tr>
+          <tr><td>i10-index</td><td id="statI10">–</td></tr>
+          <tr class="g-row"><td>G1-Index</td><td id="statG1">–</td></tr>
+          <tr class="g-row"><td>G2-Index</td><td id="statG2">–</td></tr>
+          <tr class="g-row"><td>G3-Index</td><td id="statG3">–</td></tr>
+        </tbody>
+      </table>
+      <div class="g-legend">
+        G1-Index = 1st-author citations &nbsp;·&nbsp; G2-Index = 1st–2nd &nbsp;·&nbsp; G3-Index = 1st–3rd. Percentage = index ÷ total citations × 100.
+      </div>
+      <button id="analyzeBtn" class="analyze-btn">Compute G1 / G2 / G3</button>
+      <div id="aiStatus" class="ai-status"></div>
+    </div>
+  </div>
+
+  <div class="pubs-toolbar">
+    <span id="pubCount" class="pub-count"></span>
+    <div class="sort-links">
+      Sort by
+      <a href="#" id="sortYear">Year</a> |
+      <a href="#" id="sortCitations">Citations</a>
+    </div>
+  </div>
+
+  <table class="pub-table">
+    <thead>
+      <tr>
+        <th class="col-title"></th>
+        <th class="col-cites">Cited by</th>
+        <th class="col-year">Year</th>
+        <th class="col-pos">Position</th>
+      </tr>
+    </thead>
+    <tbody id="pubBody"></tbody>
+  </table>
+</div>
+
+<div id="emptyState" class="empty-state">
+  Enter a Google Scholar profile URL above and click <b>Fetch profile</b>.
+</div>
+
+<footer class="app-footer">
+  &copy; 2026 DANIEL SAATCHI DESIGNS &amp; TECHNOLOGIES (DSDT) — All rights reserved
+</footer>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
