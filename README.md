@@ -1,3 +1,5 @@
+<img width="1528" height="950" alt="image" src="https://github.com/user-attachments/assets/dd9d3471-71e7-49cb-8191-f6cec7b8f04c" />
+
 # G-Indexes
 G-indexes powered by Ollama AI-Agent &amp; Google Scholar
 
