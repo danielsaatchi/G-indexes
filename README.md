@@ -1,8 +1,7 @@
-# G-indexes
+# G-Indexes
 G-indexes powered by Ollama AI-Agent &amp; Google Scholar
 
-# G-Index Scholar Metrics (local app)
-
+## G-Index Scholar Agent (local AI-Agent)
 A small local web app that reconstructs a Google Scholar "Citations" page and
 adds three extra indicators — **G1, G2, G3** — computed from the
 Graded Authorship-Filtered Citation Metrics (GAFCM) framework:
