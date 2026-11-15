@@ -25,7 +25,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Then open **http://localhost:5000** in your browser.
+Then open **http://localhost:5000** or **http://127.0.0.1:5000** in your browser.
 
 ## Using it
 
@@ -36,7 +36,7 @@ Then open **http://localhost:5000** in your browser.
    (Ollama's current naming — if you literally have a model tagged
    `gemma4:latest`, type that exact tag; just make sure it's been pulled with
    `ollama pull <model>` first).
-3. Leave **Ollama server** as `http://localhost:11434` unless yours runs
+3. Leave **Ollama server** as `http://localhost:11434` or `http://127.0.0.1:11434` unless yours runs
    elsewhere.
 4. Click **Fetch profile** — this pulls your full publication list, citation
    counts, and Scholar's own Citations/h-index/i10-index, laid out like your
