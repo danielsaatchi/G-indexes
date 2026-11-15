@@ -6,9 +6,9 @@ A small local web app that reconstructs a Google Scholar "Citations" page and
 adds three extra indicators — **G1, G2, G3** — computed from the
 Graded Authorship-Filtered Citation Metrics (GAFCM) framework:
 
-- **G1** = citations from publications where you are the 1st author
-- **G2** = citations from publications where you are 1st or 2nd author
-- **G3** = citations from publications where you are 1st, 2nd, or 3rd author
+- **G1-index** = citations from publications where you are the 1st author
+- **G2-index** = citations from publications where you are 1st or 2nd author
+- **G3-index** = citations from publications where you are 1st, 2nd, or 3rd author
 
 It runs entirely on your machine:
 - The Flask server scrapes the public Google Scholar profile you give it
