@@ -93,6 +93,47 @@ def parse_stats_table(soup: BeautifulSoup):
     return stats
 
 
+def parse_citations_by_year(soup: BeautifulSoup):
+    """Parse Scholar's 'Cited by' per-year bar graph into {year: count}.
+
+    Scholar's histogram markup has shifted slightly across versions, so this
+    tries several known variants and falls back gracefully rather than
+    silently returning nothing.
+    """
+    graph = soup.find(id="gsc_graph") or soup.find(class_="gsc_graph")
+    if not graph:
+        return {}
+
+    # Year labels: historically <span class="gsc_g_t">, sometimes inside <a>.
+    year_tags = graph.find_all(class_="gsc_g_t")
+    years = [t.get_text(strip=True) for t in year_tags]
+    years = [y for y in years if y]  # drop empties
+
+    # Bars: <a class="gsc_g_a">, count shown either in a child
+    # <span class="gsc_g_al"> or as the anchor's own text.
+    bar_tags = graph.find_all("a", class_="gsc_g_a")
+    counts = []
+    for bar in bar_tags:
+        label = bar.find(class_="gsc_g_al")
+        text = (label.get_text(strip=True) if label else bar.get_text(strip=True))
+        text = re.sub(r"[^\d]", "", text)
+        counts.append(int(text) if text else 0)
+
+    if not years or not counts:
+        return {}
+
+    # Zero-citation years sometimes have no rendered bar element at all.
+    # When bars are fewer than year labels, assume the missing ones are the
+    # earliest years (left-padded with zero) rather than misaligning later
+    # non-zero years.
+    if len(counts) < len(years):
+        counts = [0] * (len(years) - len(counts)) + counts
+    elif len(counts) > len(years):
+        counts = counts[-len(years):]
+
+    return dict(zip(years, counts))
+
+
 def parse_publications(soup: BeautifulSoup):
     rows = soup.select("#gsc_a_b .gsc_a_tr")
     pubs = []
@@ -169,6 +210,8 @@ def api_profile():
     session = requests.Session()
     all_pubs = []
     name, affiliation, stats, photo_url = None, "", {}, None
+    citations_by_year = {}
+    interests = []
 
     try:
         for page in range(MAX_PAGES):
@@ -181,7 +224,12 @@ def api_profile():
                 name = name_el.get_text(strip=True) if name_el else None
                 affil_el = soup.select_one(".gsc_prf_il")
                 affiliation = affil_el.get_text(strip=True) if affil_el else ""
+                interests = [
+                    a.get_text(strip=True)
+                    for a in soup.select("#gsc_prf_int a.gsc_prf_inta")
+                ]
                 stats = parse_stats_table(soup)
+                citations_by_year = parse_citations_by_year(soup)
                 photo_img = soup.select_one("#gsc_prf_pup-img")
                 photo_url = urljoin(SCHOLAR_BASE, photo_img["src"]) if photo_img and photo_img.get("src") else None
 
@@ -222,10 +270,39 @@ def api_profile():
         ok=True,
         name=name,
         affiliation=affiliation,
+        interests=interests,
         scholar_url=f"{SCHOLAR_BASE}/citations?user={user_id}&hl=en",
         photo_proxy_url=f"/api/photo?user={user_id}" if photo_url else None,
         stats=stats,
+        citations_by_year=citations_by_year,
         publications=all_pubs,
+    )
+
+
+@app.route("/api/debug_graph")
+def api_debug_graph():
+    """Diagnostic: returns the raw HTML Scholar sent for the citation-graph
+    area, so the exact markup can be inspected if the chart isn't rendering."""
+    scholar_url = request.args.get("url", "").strip()
+    try:
+        user_id = extract_user_id(scholar_url)
+    except ValueError as e:
+        return jsonify(ok=False, message=str(e)), 400
+
+    session = requests.Session()
+    try:
+        html = fetch_profile_page(session, user_id, 0)
+    except (RuntimeError, requests.RequestException) as e:
+        return jsonify(ok=False, message=str(e)), 502
+
+    soup = BeautifulSoup(html, "lxml")
+    graph = soup.find(id="gsc_graph") or soup.find(class_="gsc_graph")
+    return jsonify(
+        ok=True,
+        found_graph_container=bool(graph),
+        graph_html=str(graph)[:8000] if graph else None,
+        parsed=parse_citations_by_year(soup),
+        page_length=len(html),
     )
 
 

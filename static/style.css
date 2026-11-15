@@ -88,6 +88,12 @@ body{
 .profile-scholar-link{font-size:12px;color:var(--link);text-decoration:none;}
 .profile-scholar-link:hover{text-decoration:underline;}
 
+.profile-interests{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;}
+.interest-tag{
+  display:inline-block;background:#f1f3f4;color:var(--link);
+  font-size:12px;padding:4px 10px;border-radius:14px;
+}
+
 .stats-box{margin-left:auto;}
 .stats-table{border-collapse:collapse;font-size:13px;}
 .stats-table th, .stats-table td{
@@ -108,6 +114,38 @@ body{
 .analyze-btn:hover{background:var(--g-bg);}
 .analyze-btn:disabled{opacity:.5;cursor:default;}
 .ai-status{font-size:11px;color:var(--muted);margin-top:6px;max-width:260px;}
+
+.year-chart-card{
+  padding:16px 0 8px 0;border-bottom:1px solid var(--border);
+}
+.year-chart-title{font-size:13px;color:var(--text);margin-bottom:10px;}
+.year-chart{
+  display:flex;align-items:flex-end;gap:4px;height:140px;position:relative;
+  padding-right:36px;border-bottom:1px solid var(--border);
+}
+.year-chart::before{
+  content:"";position:absolute;left:0;right:36px;top:0;
+  border-top:1px dashed var(--border);
+}
+.year-bar-col{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+  height:100%;min-width:18px;
+}
+.year-bar{
+  width:60%;background:#9aa0a6;border-radius:2px 2px 0 0;min-height:0;
+  transition:height .2s ease;
+}
+.year-bar-col:hover .year-bar{background:#5f6368;}
+.year-bar-count{font-size:10px;color:var(--muted);margin-bottom:3px;min-height:12px;}
+.year-labels{
+  display:flex;gap:4px;padding-right:36px;margin-top:4px;
+}
+.year-label-col{flex:1;text-align:center;font-size:11px;color:var(--muted);min-width:18px;}
+.year-axis{
+  position:absolute;right:0;top:0;bottom:0;width:30px;
+  display:flex;flex-direction:column;justify-content:space-between;
+  font-size:11px;color:var(--muted);text-align:right;padding-bottom:2px;
+}
 
 .pubs-toolbar{
   display:flex;justify-content:space-between;align-items:center;

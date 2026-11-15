@@ -67,6 +67,15 @@ function renderProfile(data) {
   $('profLink').textContent = data.scholar_url;
   $('profLink').href = data.scholar_url;
 
+  const interestsEl = $('profInterests');
+  interestsEl.innerHTML = '';
+  (data.interests || []).forEach((tag) => {
+    const span = document.createElement('span');
+    span.className = 'interest-tag';
+    span.textContent = tag;
+    interestsEl.appendChild(span);
+  });
+
   const avatarImg = $('avatarImg');
   const avatarFallback = $('avatarFallback');
   if (data.photo_proxy_url) {
@@ -94,8 +103,63 @@ function renderProfile(data) {
   setAiStatus('');
 
   $('pubCount').textContent = `${currentPublications.length} publications`;
+  renderYearChart(data.citations_by_year || {});
   renderPubTable();
   $('profileSection').style.display = 'block';
+}
+
+function renderYearChart(citationsByYear) {
+  const container = $('yearChart');
+  container.innerHTML = '';
+  const years = Object.keys(citationsByYear);
+  if (!years.length) {
+    container.parentElement.style.display = 'none';
+    return;
+  }
+  container.parentElement.style.display = 'block';
+
+  const counts = years.map((y) => citationsByYear[y] || 0);
+  const maxCount = Math.max(...counts, 1);
+  // round axis max up to a "nice" number
+  const niceMax = Math.ceil(maxCount / 10) * 10 || 10;
+
+  years.forEach((year, idx) => {
+    const col = document.createElement('div');
+    col.className = 'year-bar-col';
+    col.title = `${year}: ${counts[idx]} citation(s)`;
+
+    const countLabel = document.createElement('div');
+    countLabel.className = 'year-bar-count';
+    countLabel.textContent = counts[idx] > 0 ? counts[idx] : '';
+
+    const bar = document.createElement('div');
+    bar.className = 'year-bar';
+    const heightPct = (counts[idx] / niceMax) * 100;
+    bar.style.height = heightPct > 0 ? `${heightPct}%` : '1px';
+
+    col.appendChild(countLabel);
+    col.appendChild(bar);
+    container.appendChild(col);
+  });
+
+  const axis = document.createElement('div');
+  axis.className = 'year-axis';
+  axis.innerHTML = `<span>${niceMax}</span><span>${Math.round(niceMax / 2)}</span><span>0</span>`;
+  container.appendChild(axis);
+
+  const labelsRow = $('yearChartLabels') || document.createElement('div');
+  labelsRow.id = 'yearChartLabels';
+  labelsRow.className = 'year-labels';
+  labelsRow.innerHTML = '';
+  years.forEach((year) => {
+    const lbl = document.createElement('div');
+    lbl.className = 'year-label-col';
+    lbl.textContent = year;
+    labelsRow.appendChild(lbl);
+  });
+  if (!labelsRow.parentElement) {
+    container.insertAdjacentElement('afterend', labelsRow);
+  }
 }
 
 function renderPubTable() {
