@@ -68,4 +68,3 @@ Then open **http://localhost:5000** or **http://127.0.0.1:5000** in your browser
 If you use this repository in your research, please cite:
 
 Saatchi, D. (2026). *Anti-Engineered G-Indexes (G1, G2, G3): Graded Authorship-Filtered Citation Metrics for Researchers Forensics by AI-Agent and Google Scholar*. AI Journal of Arts & Metascience (AIJAM). https://github.com/danielsaatchi/G-indexes
-  papers per fetch to stay polite to Scholar).
