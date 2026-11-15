@@ -64,7 +64,7 @@ Then open **http://localhost:5000** or **http://127.0.0.1:5000** in your browser
   tells you so in the status line next to "Compute G1 / G2 / G3".
 
 
-  ## Citation
+## Citation
 If you use this repository in your research, please cite:
 
 Saatchi, D. (2026). *Anti-Engineered G-Indexes (G1, G2, G3): Graded Authorship-Filtered Citation Metrics for Researchers Forensics by AI-Agent and Google Scholar*. AI Journal of Arts & Metascience (AIJAM). https://github.com/danielsaatchi/G-indexes
