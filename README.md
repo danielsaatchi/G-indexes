@@ -1,7 +1,7 @@
 # G-Indexes
 Anti-Engineered G-indexes for researchers forensics powered by Ollama AI-Agent &amp; Google Scholar 
 
-<img width="3814" height="5046" alt="image" src="https://github.com/user-attachments/assets/11600cb2-e87d-44a3-b752-494a4ceb528b" />
+<img width="3420" height="5307" alt="image" src="https://github.com/user-attachments/assets/e9876a96-6e35-4e2f-a972-535282651512" />
 
 ## G-Index Scholar Agent (local AI-Agent app)
 A small local web app that reconstructs a Google Scholar "Citations" page and
