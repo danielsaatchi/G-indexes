@@ -1,7 +1,7 @@
 # G-Indexes
 G-indexes powered by Ollama AI-Agent &amp; Google Scholar
 
-## G-Index Scholar Agent (local AI-Agent)
+## G-Index Scholar Agent (local AI-Agent app)
 A small local web app that reconstructs a Google Scholar "Citations" page and
 adds three extra indicators — **G1, G2, G3** — computed from the
 Graded Authorship-Filtered Citation Metrics (GAFCM) framework:
@@ -51,7 +51,6 @@ Then open **http://localhost:5000** in your browser.
    and the totals recompute instantly.
 
 ## Notes
-
 - Google Scholar occasionally shows a CAPTCHA to automated requests. If
   `Fetch profile` fails with a bot-check message, wait a few minutes and
   retry — this is Scholar's rate limiting, not a bug in the app.
