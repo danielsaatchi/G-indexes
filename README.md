@@ -32,7 +32,7 @@ Then open **http://localhost:5000** in your browser.
 1. The Scholar URL field is pre-filled with your profile
    (`https://scholar.google.com/citations?user=Uv7KQxEAAAAJ&hl=en`) — change
    it if needed.
-2. Set **Ollama model** to whatever you have pulled locally, e.g. `gemma2:latest`
+2. Set **Ollama model** to whatever you have pulled locally, e.g. `gemma4:latest`
    (Ollama's current naming — if you literally have a model tagged
    `gemma4:latest`, type that exact tag; just make sure it's been pulled with
    `ollama pull <model>` first).
