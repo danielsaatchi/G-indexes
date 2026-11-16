@@ -1,5 +1,5 @@
 # G-Indexes
-Anti-Engineered G-indexes for researchers forensics powered by Ollama AI-Agent &amp; Google Scholar 
+Forensic G-indexes for researchers powered by Ollama AI-Agent &amp; Google Scholar 
 
 <img width="3670" height="5739" alt="image" src="https://github.com/user-attachments/assets/392f46dd-4a38-4f10-966f-777ee2d635c2" />
 
