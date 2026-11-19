@@ -54,15 +54,34 @@ Then open **http://localhost:5000** or **http://127.0.0.1:5000** in your browser
    and the totals recompute instantly.
 
 ## Notes
+-
+## Notes
+
 - Google Scholar occasionally shows a CAPTCHA to automated requests. If
   `Fetch profile` fails with a bot-check message, wait a few minutes and
   retry — this is Scholar's rate limiting, not a bug in the app.
 - Author lists on the Citations page are sometimes truncated with "…". Check
   **resolve truncated author lists** before fetching to have the app pull the
   full author list from each paper's detail page (slower — capped at 15
+  papers per fetch to stay polite to Scholar).
 - If the Ollama call fails (model not pulled, server not running, wrong
   port), the app still computes G1/G2/G3 from the heuristic surname match and
   tells you so in the status line next to "Compute G1 / G2 / G3".
+- **Country detection is a best-effort guess, not a verified lookup.** This
+  app has no live web-search integration — country is inferred only from (a)
+  a local keyword list of country names/abbreviations and well-known
+  universities found in the Scholar affiliation string, and (b) if that
+  fails and an Ollama model is set, asking the model's own knowledge for a
+  guess. Neither step actually searches the web. If a profile's affiliation
+  doesn't match the built-in keyword list and the model can't resolve it
+  either, the Country column is left blank ("unresolved") rather than
+  guessed — check and correct the `gindex_dataset.xlsx` file by hand before
+  using it for anything downstream.
+- The dataset file is cumulative and never overwritten automatically — each
+  "Add to Dataset" click appends one row, so re-adding the same profile
+  twice creates a duplicate row (there's no de-duplication logic by design,
+  since you may want to track the same profile at different snapshot
+  dates).
 
 
 ## Citation
