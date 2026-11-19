@@ -14,6 +14,10 @@ function setAiStatus(msg) {
   $('aiStatus').textContent = msg || '';
 }
 
+function setReviewStatus(msg) {
+  $('reviewStatus').textContent = msg || '';
+}
+
 function formatGCell(value, totalCitations) {
   const v = value || 0;
   if (!totalCitations) return `${v} (0%)`;
@@ -25,6 +29,10 @@ function setGStats(g1, g2, g3, totalCitations) {
   $('statG1').innerHTML = formatGCell(g1, totalCitations);
   $('statG2').innerHTML = formatGCell(g2, totalCitations);
   $('statG3').innerHTML = formatGCell(g3, totalCitations);
+}
+
+function setGrwStat(grw, totalCitations) {
+  $('statGRW').innerHTML = formatGCell(grw, totalCitations);
 }
 
 async function fetchProfile() {
@@ -212,10 +220,29 @@ function renderPubTable() {
       posTd.appendChild(srcSpan);
     }
 
+    const reviewTd = document.createElement('td');
+    reviewTd.className = 'pub-review-wrap';
+    const reviewCheckbox = document.createElement('input');
+    reviewCheckbox.type = 'checkbox';
+    reviewCheckbox.checked = !!p.is_review;
+    reviewCheckbox.addEventListener('change', (e) => {
+      currentPublications[idx].is_review = e.target.checked;
+      currentPublications[idx].review_source = 'manual';
+      recomputeMetricsFromCurrentPositions();
+    });
+    reviewTd.appendChild(reviewCheckbox);
+    if (p.review_source) {
+      const revSrcSpan = document.createElement('span');
+      revSrcSpan.className = 'review-source ' + p.review_source;
+      revSrcSpan.textContent = p.review_source;
+      reviewTd.appendChild(revSrcSpan);
+    }
+
     tr.appendChild(titleTd);
     tr.appendChild(citesTd);
     tr.appendChild(yearTd);
     tr.appendChild(posTd);
+    tr.appendChild(reviewTd);
     body.appendChild(tr);
   });
 }
@@ -238,10 +265,15 @@ function recomputeMetricsFromCurrentPositions() {
 
   const g1 = gSum(1), g2 = gSum(2), g3 = gSum(3);
 
+  const grw = currentPublications
+    .filter((p) => p.is_review)
+    .reduce((a, p) => a + (p.citations || 0), 0);
+
   $('statCitations').textContent = total;
   $('statH').textContent = h;
   $('statI10').textContent = i10;
   setGStats(g1, g2, g3, total);
+  setGrwStat(grw, total);
 }
 
 async function analyze() {
@@ -255,6 +287,11 @@ async function analyze() {
     ollamaModel
       ? `Asking local Ollama model "${ollamaModel}" to resolve authorship positions…`
       : 'No model set — using surname/initial heuristic only…'
+  );
+  setReviewStatus(
+    ollamaModel
+      ? `Asking "${ollamaModel}" to classify review-type publications…`
+      : 'No model set — using title-keyword heuristic only…'
   );
 
   try {
@@ -282,6 +319,8 @@ async function analyze() {
       ...p,
       position: data.results[idx].position,
       position_source: data.results[idx].position_source,
+      is_review: data.results[idx].is_review,
+      review_source: data.results[idx].review_source,
     }));
     currentMetrics = data.metrics;
 
@@ -289,11 +328,16 @@ async function analyze() {
     $('statH').textContent = data.metrics.hindex;
     $('statI10').textContent = data.metrics.i10index;
     setGStats(data.metrics.g1, data.metrics.g2, data.metrics.g3, data.metrics.total_citations);
+    setGrwStat(data.metrics.grw, data.metrics.total_citations);
 
     renderPubTable();
     setAiStatus(data.ai_status);
+    setReviewStatus(
+      `${data.review_status} — ${data.metrics.review_count} of ${data.metrics.publication_count} publications flagged as reviews.`
+    );
   } catch (err) {
     setAiStatus('Could not reach the server: ' + err.message);
+    setReviewStatus('');
   } finally {
     $('analyzeBtn').disabled = false;
   }

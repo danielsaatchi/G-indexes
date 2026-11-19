@@ -8,6 +8,11 @@ Runs a small Flask server that:
      determine each publication's authorship position for the target researcher.
   3. Computes Citations / h-index / i10-index / G1 / G2 / G3 deterministically
      from the resulting (citations, position) pairs, per the GAFCM framework.
+  4. Computes GRW-Index: citations accumulated from review-type publications
+     (literature reviews, systematic reviews, meta-analyses, surveys), using
+     a title-keyword heuristic and/or the local Ollama model to classify each
+     publication, flagging profiles that may rely heavily on co-authored
+     review papers for citation volume.
 
 Run:
     pip install -r requirements.txt
@@ -367,6 +372,77 @@ def heuristic_position(author_name: str, authors_field: str):
     return None
 
 
+REVIEW_TITLE_PATTERNS = re.compile(
+    r"\b("
+    r"a\s+review|systematic\s+review|literature\s+review|narrative\s+review|"
+    r"scoping\s+review|review\s+of|review\s+on|review\s+article|"
+    r"meta-analysis|meta\s+analysis|an\s+overview|a\s+survey\s+of|"
+    r"state[\s-]of[\s-]the[\s-]art|current\s+status\s+and|"
+    r"recent\s+advances|recent\s+progress|a\s+comprehensive\s+review"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def heuristic_is_review(title: str) -> bool:
+    """Flag likely review/survey/meta-analysis papers from the title alone.
+
+    This is a coarse, title-only heuristic: it will miss reviews with
+    non-obvious titles and may mis-flag the rare original-research paper
+    that happens to use one of these words. It is meant as a starting point
+    for the user to correct per-row, not a final determination.
+    """
+    return bool(REVIEW_TITLE_PATTERNS.search(title or ""))
+
+
+def ask_ollama_review_classification(ollama_url, model, pubs):
+    """
+    Ask the local Ollama model to classify each publication as a review-type
+    paper (review article, systematic review, meta-analysis, survey, etc.)
+    versus original research, based on its title. Returns (bool_list, status).
+    """
+    base = ollama_url.rstrip("/")
+    numbered = "\n".join(f"{i}: {p['title']}" for i, p in enumerate(pubs))
+    prompt = (
+        "You are given a numbered list of publication titles (format: "
+        "index: title). For each index, decide whether the publication is a "
+        "review-type paper — a literature review, systematic review, scoping "
+        "review, narrative review, meta-analysis, or broad survey/overview "
+        "article that synthesizes existing work rather than reporting new "
+        "original research or a new method/result.\n\n"
+        "Return ONLY a JSON array of true/false values, in the exact same "
+        "order as the input indices, with no commentary, e.g. "
+        "[false, true, false].\n\n"
+        f"{numbered}"
+    )
+    try:
+        resp = requests.post(
+            f"{base}/api/chat",
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "format": "json",
+            },
+            timeout=120,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data.get("message", {}).get("content", "")
+        match = re.search(r"\[[\s\S]*\]", content)
+        raw_list = match.group(0) if match else content
+        import json as _json
+        parsed = _json.loads(raw_list)
+        if not isinstance(parsed, list):
+            raise ValueError("model did not return a list")
+        flags = [bool(v) for v in parsed]
+        if len(flags) < len(pubs):
+            flags += [False] * (len(pubs) - len(flags))
+        return flags[: len(pubs)], f"ai-assisted ({model})"
+    except Exception as e:
+        return None, f"ollama unavailable ({e}); using title-keyword heuristic only"
+
+
 def ask_ollama_positions(ollama_url, model, author_name, pubs):
     """
     Ask the local Ollama model to confirm/resolve authorship position for each
@@ -440,6 +516,24 @@ def api_analyze():
             ollama_url, ollama_model, author_name, publications
         )
 
+    heuristic_reviews = [
+        heuristic_is_review(p.get("title", "")) for p in publications
+    ]
+    ai_reviews, review_status = None, "AI step skipped"
+    if use_ai and ollama_model:
+        ai_reviews, review_status = ask_ollama_review_classification(
+            ollama_url, ollama_model, publications
+        )
+    final_reviews = []
+    review_sources = []
+    for i in range(len(publications)):
+        if ai_reviews is not None:
+            final_reviews.append(ai_reviews[i])
+            review_sources.append("ai")
+        else:
+            final_reviews.append(heuristic_reviews[i])
+            review_sources.append("heuristic")
+
     final_positions = []
     sources = []
     for i, p in enumerate(publications):
@@ -474,6 +568,11 @@ def api_analyze():
 
     g1, g2, g3 = g_sum(1), g_sum(2), g_sum(3)
 
+    grw = sum(
+        c for c, is_rev in zip(citations, final_reviews) if is_rev
+    )
+    review_count = sum(1 for is_rev in final_reviews if is_rev)
+
     results = [
         {
             "title": p.get("title"),
@@ -481,6 +580,8 @@ def api_analyze():
             "citations": citations[i],
             "position": final_positions[i],
             "position_source": sources[i],
+            "is_review": final_reviews[i],
+            "review_source": review_sources[i],
         }
         for i, p in enumerate(publications)
     ]
@@ -488,6 +589,7 @@ def api_analyze():
     return jsonify(
         ok=True,
         ai_status=ai_status,
+        review_status=review_status,
         results=results,
         metrics={
             "total_citations": total_citations,
@@ -496,6 +598,9 @@ def api_analyze():
             "g1": g1,
             "g2": g2,
             "g3": g3,
+            "grw": grw,
+            "review_count": review_count,
+            "publication_count": len(publications),
         },
     )
 

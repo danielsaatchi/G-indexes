@@ -69,13 +69,16 @@
           <tr class="g-row"><td>G1-Index</td><td id="statG1">–</td></tr>
           <tr class="g-row"><td>G2-Index</td><td id="statG2">–</td></tr>
           <tr class="g-row"><td>G3-Index</td><td id="statG3">–</td></tr>
+          <tr class="grw-row"><td>GRW-Index</td><td id="statGRW">–</td></tr>
         </tbody>
       </table>
       <div class="g-legend">
-        G1-Index = 1st-author citations &nbsp;·&nbsp; G2-Index = 1st–2nd &nbsp;·&nbsp; G3-Index = 1st–3rd. Percentage = index ÷ total citations × 100.
+        G1-Index = 1st-author citations &nbsp;·&nbsp; G2-Index = 1st–2nd &nbsp;·&nbsp; G3-Index = 1st–3rd. Percentage = index ÷ total citations × 100.<br>
+        GRW-Index = citations from review-type publications (literature/systematic reviews, meta-analyses, surveys) &nbsp;·&nbsp; flags reliance on co-authored review papers for citation volume.
       </div>
-      <button id="analyzeBtn" class="analyze-btn">Compute G1 / G2 / G3</button>
+      <button id="analyzeBtn" class="analyze-btn">Compute G1 / G2 / G3 / GRW</button>
       <div id="aiStatus" class="ai-status"></div>
+      <div id="reviewStatus" class="ai-status"></div>
     </div>
   </div>
 
@@ -100,6 +103,7 @@
         <th class="col-cites">Cited by</th>
         <th class="col-year">Year</th>
         <th class="col-pos">Position</th>
+        <th class="col-review">Review?</th>
       </tr>
     </thead>
     <tbody id="pubBody"></tbody>

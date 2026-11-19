@@ -106,6 +106,10 @@ body{
 .g-row .stat-pct{color:var(--g-accent);}
 .g-row td:first-child{color:var(--g-accent);font-weight:bold;}
 .g-row td:nth-child(2){color:var(--g-accent);font-weight:bold;}
+
+.grw-row td:first-child{color:#b06000;font-weight:bold;}
+.grw-row td:nth-child(2){color:#b06000;font-weight:bold;}
+.grw-row .stat-pct{color:#b06000;}
 .g-legend{font-size:11px;color:var(--muted);margin-top:6px;max-width:260px;}
 .analyze-btn{
   margin-top:10px;background:#fff;border:1px solid var(--g-accent);color:var(--g-accent);
@@ -160,7 +164,7 @@ body{
   text-align:left;font-weight:400;color:var(--muted);font-size:12px;
   padding:6px 4px;border-bottom:1px solid var(--border);
 }
-.col-cites, .col-year, .col-pos{text-align:center;width:90px;}
+.col-cites, .col-year, .col-pos, .col-review{text-align:center;width:90px;}
 .pub-table tbody tr{border-bottom:1px solid var(--border);}
 .pub-table tbody tr:hover{background:#f8f9fa;}
 .pub-table td{padding:8px 4px;vertical-align:top;}
@@ -170,6 +174,11 @@ body{
 .pub-cites{text-align:center;color:var(--link);font-size:14px;}
 .pub-year{text-align:center;color:var(--muted);font-size:12px;}
 .pub-pos-wrap{text-align:center;}
+.pub-review-wrap{text-align:center;}
+.pub-review-wrap input[type=checkbox]{width:16px;height:16px;cursor:pointer;}
+.review-source{display:block;font-size:10px;color:var(--muted);margin-top:2px;}
+.review-source.ai{color:#188038;}
+.review-source.heuristic{color:#b06000;}
 .pub-pos{
   width:44px;padding:3px;border:1px solid #dadce0;border-radius:3px;
   text-align:center;font-size:12px;
