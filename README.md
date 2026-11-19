@@ -54,8 +54,6 @@ Then open **http://localhost:5000** or **http://127.0.0.1:5000** in your browser
    and the totals recompute instantly.
 
 ## Notes
--
-## Notes
 
 - Google Scholar occasionally shows a CAPTCHA to automated requests. If
   `Fetch profile` fails with a bot-check message, wait a few minutes and
