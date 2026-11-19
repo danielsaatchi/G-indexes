@@ -43,7 +43,7 @@ Then open **http://localhost:5000** or **http://127.0.0.1:5000** in your browser
 4. Click **Fetch profile** — this pulls your full publication list, citation
    counts, and Scholar's own Citations/h-index/i10-index, laid out like your
    real Scholar "Citations" page.
-5. Click **Compute G1 / G2 / G3** — the server sends each paper's author
+5. Click **Compute G1 / G2 / G3 / GRw** — the server sends each paper's author
    byline to your local Ollama model, asks it to find your position in the
    author list, falls back to a heuristic match where the model can't decide,
    and then computes G1/G2/G3 (and re-derives Citations/h-index/i10-index)
