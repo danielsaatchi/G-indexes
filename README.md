@@ -11,6 +11,7 @@ Graded Authorship-Filtered Citation Metrics (GAFCM) framework:
 - **G1-index** = citations from publications where you are the 1st author
 - **G2-index** = citations from publications where you are 1st or 2nd author
 - **G3-index** = citations from publications where you are 1st, 2nd, or 3rd author
+- **GRW-index** = citations from reviews for authorship inflation and citation anomaly
 
 It runs entirely on your machine:
 - The Flask server scrapes the public Google Scholar profile you give it
