@@ -69,6 +69,8 @@ async function fetchProfile() {
 function renderProfile(data) {
   currentPublications = data.publications.map((p) => ({ ...p, position: null, position_source: null }));
   currentMetrics = null;
+  $('exportRowBtn').disabled = true;
+  $('exportStatus').textContent = '';
 
   $('profName').textContent = data.name || '';
   $('profAffil').textContent = data.affiliation || '';
@@ -335,6 +337,7 @@ async function analyze() {
     setReviewStatus(
       `${data.review_status} — ${data.metrics.review_count} of ${data.metrics.publication_count} publications flagged as reviews.`
     );
+    $('exportRowBtn').disabled = false;
   } catch (err) {
     setAiStatus('Could not reach the server: ' + err.message);
     setReviewStatus('');
@@ -342,6 +345,53 @@ async function analyze() {
     $('analyzeBtn').disabled = false;
   }
 }
+
+async function exportRow() {
+  if (!currentMetrics) return;
+  const authorName = $('profName').textContent.trim();
+  const affiliation = $('profAffil').textContent.trim();
+  const scholarUrl = $('profLink').href;
+  const ollamaUrl = $('ollamaUrlInput').value.trim() || 'http://localhost:11434';
+  const ollamaModel = $('modelInput').value.trim();
+
+  $('exportRowBtn').disabled = true;
+  $('exportStatus').textContent = 'Writing row to gindex_dataset.xlsx…';
+  $('exportStatus').className = 'ai-status';
+
+  try {
+    const resp = await fetch('/api/export_row', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        author_name: authorName,
+        scholar_url: scholarUrl,
+        affiliation: affiliation,
+        ollama_url: ollamaUrl,
+        ollama_model: ollamaModel,
+        use_ai: !!ollamaModel,
+        metrics: currentMetrics,
+      }),
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+      $('exportStatus').textContent = data.message || 'Could not write dataset row.';
+      $('exportStatus').className = 'ai-status err';
+      return;
+    }
+    $('exportStatus').textContent =
+      `Saved row ${data.row_count} to gindex_dataset.xlsx` +
+      (data.country ? ` (country: ${data.country}, ${data.country_source})` : ' (country: unresolved)') +
+      '.';
+    $('exportStatus').className = 'ai-status ok';
+  } catch (err) {
+    $('exportStatus').textContent = 'Could not reach the server: ' + err.message;
+    $('exportStatus').className = 'ai-status err';
+  } finally {
+    $('exportRowBtn').disabled = false;
+  }
+}
+
+$('exportRowBtn').addEventListener('click', exportRow);
 
 function sortBy(key) {
   currentSort.dir = currentSort.key === key ? -currentSort.dir : -1;

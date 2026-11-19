@@ -20,16 +20,41 @@ Run:
 Then open http://localhost:5000
 """
 
+import os
 import re
 import time
 import unicodedata
+from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qs, urljoin
 
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
+from openpyxl import Workbook, load_workbook
 
 app = Flask(__name__)
+
+DATASET_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gindex_dataset.xlsx")
+DATASET_COLUMNS = [
+    "Researcher Name",
+    "Google Scholar URL",
+    "Total Citations",
+    "H-index",
+    "i10-index",
+    "G1",
+    "G1 (%)",
+    "G2",
+    "G2 (%)",
+    "G3",
+    "G3 (%)",
+    "GRW",
+    "GRW (%)",
+    "Affiliation",
+    "Detected Title/Position",
+    "Country",
+    "Country Source",
+    "Snapshot Date (UTC)",
+]
 
 SCHOLAR_BASE = "https://scholar.google.com"
 HEADERS = {
@@ -372,6 +397,173 @@ def heuristic_position(author_name: str, authors_field: str):
     return None
 
 
+TITLE_KEYWORDS = [
+    # longer/more-specific phrases first so they match before a generic
+    # substring (e.g. "Associate Professor" before bare "Professor").
+    "Distinguished Professor", "Emeritus Professor", "Research Professor",
+    "Associate Professor", "Assistant Professor", "Adjunct Professor",
+    "Visiting Professor", "Full Professor", "Professor Emeritus",
+    "Principal Investigator", "Senior Lecturer", "Research Fellow",
+    "Postdoctoral Fellow", "Postdoctoral Researcher", "Postdoc",
+    "PhD Candidate", "PhD Student", "Graduate Student", "Doctoral Student",
+    "Research Scientist", "Senior Scientist", "Staff Scientist",
+    "Group Leader", "Lab Director", "Laboratory Director",
+    "Department Chair", "Dean", "Provost", "Director", "Chair",
+    "Lecturer", "Professor", "Fellow", "Scientist", "Engineer",
+]
+TITLE_PATTERN = re.compile(
+    "(" + "|".join(re.escape(t) for t in TITLE_KEYWORDS) + ")", re.IGNORECASE
+)
+
+
+def detect_title(affiliation: str):
+    """Pull a likely academic/professional title out of a Scholar affiliation
+    string (e.g. "Associate Professor, University of X" -> "Associate Professor").
+    Returns None if no known title keyword is found."""
+    if not affiliation:
+        return None
+    match = TITLE_PATTERN.search(affiliation)
+    return match.group(1) if match else None
+
+
+# Coarse country signal from common country names/abbreviations appearing
+# directly in the affiliation string.
+COUNTRY_NAME_KEYWORDS = {
+    "united states": "United States", "usa": "United States", "u.s.a": "United States",
+    "u.s.": "United States", "united kingdom": "United Kingdom", "uk": "United Kingdom",
+    "england": "United Kingdom", "scotland": "United Kingdom", "wales": "United Kingdom",
+    "canada": "Canada", "australia": "Australia", "germany": "Germany",
+    "france": "France", "italy": "Italy", "spain": "Spain", "espana": "Spain",
+    "españa": "Spain", "netherlands": "Netherlands", "switzerland": "Switzerland",
+    "sweden": "Sweden", "norway": "Norway", "denmark": "Denmark", "finland": "Finland",
+    "belgium": "Belgium", "austria": "Austria", "ireland": "Ireland",
+    "portugal": "Portugal", "greece": "Greece", "poland": "Poland",
+    "china": "China", "japan": "Japan", "south korea": "South Korea",
+    "korea": "South Korea", "india": "India", "singapore": "Singapore",
+    "taiwan": "Taiwan", "hong kong": "Hong Kong", "israel": "Israel",
+    "iran": "Iran", "turkey": "Turkey", "türkiye": "Turkey", "saudi arabia": "Saudi Arabia",
+    "united arab emirates": "United Arab Emirates", "uae": "United Arab Emirates",
+    "qatar": "Qatar", "egypt": "Egypt", "south africa": "South Africa",
+    "brazil": "Brazil", "mexico": "Mexico", "argentina": "Argentina",
+    "chile": "Chile", "colombia": "Colombia", "new zealand": "New Zealand",
+    "russia": "Russia", "ukraine": "Ukraine", "czech republic": "Czech Republic",
+    "hungary": "Hungary", "romania": "Romania", "thailand": "Thailand",
+    "malaysia": "Malaysia", "indonesia": "Indonesia", "vietnam": "Vietnam",
+    "pakistan": "Pakistan", "bangladesh": "Bangladesh", "nigeria": "Nigeria",
+    "kenya": "Kenya", "morocco": "Morocco",
+}
+
+# Well-known universities/institutes mapped to country, for affiliations that
+# name only the institution (e.g. "UCLA") without the country itself.
+UNIVERSITY_COUNTRY_KEYWORDS = {
+    "ucla": "United States", "harvard": "United States", "stanford": "United States",
+    "mit": "United States", "berkeley": "United States", "caltech": "United States",
+    "princeton": "United States", "yale": "United States", "columbia university": "United States",
+    "cornell": "United States", "university of michigan": "United States",
+    "university of chicago": "United States", "johns hopkins": "United States",
+    "university of pennsylvania": "United States", "upenn": "United States",
+    "duke university": "United States", "nyu": "United States",
+    "university of california": "United States", "ucsd": "United States",
+    "ucsf": "United States", "uc davis": "United States", "uc irvine": "United States",
+    "university of washington": "United States", "university of texas": "United States",
+    "university of southern california": "United States", "usc": "United States",
+    "georgia tech": "United States", "northwestern university": "United States",
+    "oxford": "United Kingdom", "cambridge": "United Kingdom",
+    "imperial college": "United Kingdom", "university college london": "United Kingdom",
+    "ucl": "United Kingdom", "king's college london": "United Kingdom",
+    "lse": "United Kingdom", "edinburgh": "United Kingdom", "manchester": "United Kingdom",
+    "eth zurich": "Switzerland", "epfl": "Switzerland", "university of zurich": "Switzerland",
+    "university of toronto": "Canada", "mcgill": "Canada", "ubc": "Canada",
+    "university of waterloo": "Canada",
+    "tsinghua": "China", "peking university": "China", "fudan": "China",
+    "shanghai jiao tong": "China", "zhejiang university": "China",
+    "university of tokyo": "Japan", "kyoto university": "Japan",
+    "tokyo institute of technology": "Japan", "osaka university": "Japan",
+    "kaist": "South Korea", "seoul national university": "South Korea",
+    "national university of singapore": "Singapore", "nus": "Singapore",
+    "nanyang technological": "Singapore", "ntu": "Singapore",
+    "technion": "Israel", "tel aviv university": "Israel",
+    "weizmann institute": "Israel", "hebrew university": "Israel",
+    "sharif university": "Iran", "university of tehran": "Iran",
+    "amirkabir": "Iran", "iran university of science": "Iran",
+    "delft university": "Netherlands", "tu delft": "Netherlands",
+    "max planck": "Germany", "tu munich": "Germany", "technical university of munich": "Germany",
+    "heidelberg": "Germany", "humboldt university": "Germany",
+    "sorbonne": "France", "ecole polytechnique": "France", "cnrs": "France",
+    "university of melbourne": "Australia", "university of sydney": "Australia",
+    "anu": "Australia", "unsw": "Australia", "monash university": "Australia",
+    "iit": "India", "indian institute of technology": "India", "iisc": "India",
+    "university of sao paulo": "Brazil", "usp": "Brazil", "unicamp": "Brazil",
+}
+
+
+def detect_country(affiliation: str):
+    """Best-effort country inference from a Scholar affiliation string using
+    local keyword matching only (no live web search is wired into this app).
+    Returns (country_or_None, source) where source is "heuristic" or
+    "unresolved"."""
+    if not affiliation:
+        return None, "unresolved"
+    low = affiliation.lower()
+    for keyword, country in COUNTRY_NAME_KEYWORDS.items():
+        if keyword in low:
+            return country, "heuristic"
+    for keyword, country in UNIVERSITY_COUNTRY_KEYWORDS.items():
+        if keyword in low:
+            return country, "heuristic"
+    return None, "unresolved"
+
+
+def ask_ollama_country(ollama_url, model, affiliation):
+    """Ask the local Ollama model to infer a country from an affiliation
+    string, as a fallback when the keyword lookup can't resolve one. This is
+    a model-knowledge guess, not a verified web lookup."""
+    base = ollama_url.rstrip("/")
+    prompt = (
+        "You are given an academic affiliation string from a researcher's "
+        "profile. Respond with ONLY the country where that institution is "
+        "located, as a plain country name (e.g. \"Germany\"), and nothing "
+        "else. If you cannot determine the country, respond with exactly: "
+        "unknown.\n\n"
+        f"Affiliation: {affiliation}"
+    )
+    try:
+        resp = requests.post(
+            f"{base}/api/chat",
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data.get("message", {}).get("content", "").strip()
+        content = content.strip(".\"'")
+        if not content or content.lower() == "unknown" or len(content) > 60:
+            return None, "unresolved"
+        return content, f"ai-assisted ({model})"
+    except Exception:
+        return None, "unresolved"
+
+
+def append_dataset_row(row_values):
+    """Append one row to the cumulative dataset workbook, creating it with
+    headers on first use."""
+    if os.path.exists(DATASET_PATH):
+        wb = load_workbook(DATASET_PATH)
+        ws = wb.active
+    else:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Researcher Profiles"
+        ws.append(DATASET_COLUMNS)
+    ws.append(row_values)
+    wb.save(DATASET_PATH)
+    return ws.max_row - 1  # number of data rows, excluding header
+
+
 REVIEW_TITLE_PATTERNS = re.compile(
     r"\b("
     r"a\s+review|systematic\s+review|literature\s+review|narrative\s+review|"
@@ -602,6 +794,85 @@ def api_analyze():
             "review_count": review_count,
             "publication_count": len(publications),
         },
+    )
+
+
+@app.route("/api/export_row", methods=["POST"])
+def api_export_row():
+    body = request.get_json(force=True)
+    author_name = body.get("author_name", "").strip()
+    scholar_url = body.get("scholar_url", "").strip()
+    affiliation = body.get("affiliation", "").strip()
+    ollama_url = body.get("ollama_url", "http://localhost:11434").strip()
+    ollama_model = body.get("ollama_model", "").strip()
+    use_ai = body.get("use_ai", False)
+    metrics = body.get("metrics", {})
+
+    if not author_name:
+        return jsonify(ok=False, message="Missing author name."), 400
+
+    def pct(part, total):
+        total = total or 0
+        return round((part / total) * 100, 1) if total else 0
+
+    total_citations = metrics.get("total_citations", 0)
+    g1 = metrics.get("g1", 0)
+    g2 = metrics.get("g2", 0)
+    g3 = metrics.get("g3", 0)
+    grw = metrics.get("grw", 0)
+
+    title_detected = detect_title(affiliation) or ""
+
+    country, country_source = detect_country(affiliation)
+    if not country and use_ai and ollama_model:
+        country, country_source = ask_ollama_country(ollama_url, ollama_model, affiliation)
+    country = country or ""
+    if not country:
+        country_source = "unresolved"
+
+    snapshot = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    row = [
+        author_name,
+        scholar_url,
+        total_citations,
+        metrics.get("hindex", 0),
+        metrics.get("i10index", 0),
+        g1, pct(g1, total_citations),
+        g2, pct(g2, total_citations),
+        g3, pct(g3, total_citations),
+        grw, pct(grw, total_citations),
+        affiliation,
+        title_detected,
+        country,
+        country_source,
+        snapshot,
+    ]
+
+    try:
+        row_count = append_dataset_row(row)
+    except Exception as e:
+        return jsonify(ok=False, message=f"Could not write to dataset file: {e}"), 500
+
+    return jsonify(
+        ok=True,
+        row_count=row_count,
+        dataset_path=DATASET_PATH,
+        detected_title=title_detected,
+        country=country,
+        country_source=country_source,
+    )
+
+
+@app.route("/api/export_download")
+def api_export_download():
+    if not os.path.exists(DATASET_PATH):
+        return jsonify(ok=False, message="No dataset file exists yet — add at least one row first."), 404
+    return send_file(
+        DATASET_PATH,
+        as_attachment=True,
+        download_name="gindex_dataset.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
