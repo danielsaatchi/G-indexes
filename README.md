@@ -64,6 +64,34 @@ Then open **http://localhost:5000** or **http://127.0.0.1:5000** in your browser
    each one adds a new row, building a dataset over time. Use **Download
    gindex_dataset.xlsx** to grab the file at any point.
 
+## Batch Dataset Builder (automated, many profiles)
+
+Below the toolbar, click **"Batch Dataset Builder"** to expand it:
+
+1. Paste one Google Scholar profile URL per line (up to 1000 in a single
+   batch).
+2. Set the **delay between profiles** (default 5 seconds) — this is your
+   main defense against Google Scholar's rate limiting/CAPTCHA wall, since
+   every profile is a handful of real requests to scholar.google.com.
+   Start conservative; lower it only once you've confirmed a run doesn't
+   trigger a block.
+3. Click **Start batch**. The server processes profiles one at a time in the
+   background (fetch → authorship/review classification → append dataset
+   row), and the page polls for progress every 2 seconds — you can navigate
+   away and come back, the job keeps running server-side.
+4. Each profile becomes one row in the same cumulative `gindex_dataset.xlsx`
+   used by the single-profile "Add to Dataset" button, so batch runs and
+   manual runs build the same dataset.
+5. **Cancel** stops the batch after the profile currently in flight
+   finishes; already-saved rows stay in the dataset.
+
+**Before running hundreds or 1000 profiles at once:** start with a small
+batch (5–10 URLs) first to confirm your delay setting, your Ollama model's
+speed, and that Scholar isn't CAPTCHA-blocking you. A batch of 1000 profiles
+run sequentially, even at a modest delay, can take many hours — there is no
+parallelism, by design, since concurrent requests to Scholar are far more
+likely to trigger a block than a slower sequential run.
+
 ## Notes
 
 - Google Scholar occasionally shows a CAPTCHA to automated requests. If
