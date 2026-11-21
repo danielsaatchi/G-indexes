@@ -52,6 +52,17 @@ Then open **http://localhost:5000** or **http://127.0.0.1:5000** in your browser
 6. Every row's **Position** box is editable — fix it directly for any paper
    (equal-contribution, alphabetical ordering, consortium authorship, etc.)
    and the totals recompute instantly.
+7. The same **Compute** step also classifies each paper as a review-type
+   publication (literature/systematic review, meta-analysis, survey) using a
+   title-keyword heuristic and/or the Ollama model, giving a **GRW-Index**
+   (citations from review papers) and **GRW%**. Each row has a **Review?**
+   checkbox you can correct by hand.
+8. Click **Add to Dataset (Excel)** to append the current profile's full row
+   (name, Scholar URL, Citations/h/i10, G1–G3, GRW, and their percentages,
+   affiliation, detected title, and inferred country) to a cumulative file,
+   `gindex_dataset.xlsx`, in the app folder. Load a new profile and repeat —
+   each one adds a new row, building a dataset over time. Use **Download
+   gindex_dataset.xlsx** to grab the file at any point.
 
 ## Notes
 
