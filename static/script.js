@@ -278,11 +278,14 @@ function recomputeMetricsFromCurrentPositions() {
   setGrwStat(grw, total);
 }
 
+let lastAnalyzeElapsedSeconds = null;
+
 async function analyze() {
   if (!currentPublications.length) return;
   const authorName = $('profName').textContent.trim();
   const ollamaUrl = $('ollamaUrlInput').value.trim() || 'http://localhost:11434';
   const ollamaModel = $('modelInput').value.trim();
+  const startTime = performance.now();
 
   $('analyzeBtn').disabled = true;
   setAiStatus(
@@ -325,6 +328,7 @@ async function analyze() {
       review_source: data.results[idx].review_source,
     }));
     currentMetrics = data.metrics;
+    lastAnalyzeElapsedSeconds = (performance.now() - startTime) / 1000;
 
     $('statCitations').textContent = data.metrics.total_citations;
     $('statH').textContent = data.metrics.hindex;
@@ -335,7 +339,8 @@ async function analyze() {
     renderPubTable();
     setAiStatus(data.ai_status);
     setReviewStatus(
-      `${data.review_status} — ${data.metrics.review_count} of ${data.metrics.publication_count} publications flagged as reviews.`
+      `${data.review_status} — ${data.metrics.review_count} of ${data.metrics.publication_count} publications flagged as reviews. ` +
+      `(computed in ${lastAnalyzeElapsedSeconds.toFixed(1)}s)`
     );
     $('exportRowBtn').disabled = false;
   } catch (err) {
@@ -370,6 +375,7 @@ async function exportRow() {
         ollama_model: ollamaModel,
         use_ai: !!ollamaModel,
         metrics: currentMetrics,
+        elapsed_seconds: lastAnalyzeElapsedSeconds,
       }),
     });
     const data = await resp.json();
@@ -381,7 +387,7 @@ async function exportRow() {
     $('exportStatus').textContent =
       `Saved row ${data.row_count} to gindex_dataset.xlsx` +
       (data.country ? ` (country: ${data.country}, ${data.country_source})` : ' (country: unresolved)') +
-      '.';
+      (lastAnalyzeElapsedSeconds ? ` — runtime ${lastAnalyzeElapsedSeconds.toFixed(1)}s.` : '.');
     $('exportStatus').className = 'ai-status ok';
   } catch (err) {
     $('exportStatus').textContent = 'Could not reach the server: ' + err.message;
@@ -417,3 +423,142 @@ window.addEventListener('DOMContentLoaded', () => {
   $('scholarUrlInput').value = 'https://scholar.google.com/citations?user=Uv7KQxEAAAAJ&hl=en';
   if (!$('modelInput').value) $('modelInput').value = 'gemma4:e4b';
 });
+
+// ---------- Batch Dataset Builder ----------
+
+let batchPollTimer = null;
+
+function formatSeconds(s) {
+  if (s === null || s === undefined) return '–';
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  const rem = s - m * 60;
+  return `${m}m ${rem.toFixed(0)}s`;
+}
+
+function renderBatchRow(idx, item) {
+  const tr = document.createElement('tr');
+  const label = item.name || item.url;
+  const resultCls = item.ok ? 'result-ok' : 'result-fail';
+  const resultText = item.ok
+    ? `✓ ${item.message}`
+    : `✗ ${item.message}`;
+  tr.innerHTML = `
+    <td>${idx + 1}</td>
+    <td>${label}</td>
+    <td class="${resultCls}">${resultText}</td>
+    <td>${formatSeconds(item.elapsed_seconds)}</td>
+  `;
+  return tr;
+}
+
+function renderBatchProgress(job) {
+  $('batchProgressWrap').style.display = 'block';
+  const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0;
+  $('batchProgressFill').style.width = pct + '%';
+  $('batchProgressText').textContent =
+    `${job.status} — ${job.processed}/${job.total} processed ` +
+    `(${job.succeeded} saved, ${job.failed} failed)`;
+
+  const body = $('batchResultsBody');
+  body.innerHTML = '';
+  job.items.forEach((item, idx) => {
+    body.appendChild(renderBatchRow(idx, item));
+  });
+
+  const sumProfile = job.sum_profile_elapsed_seconds || 0;
+  const batchWall = job.batch_elapsed_seconds || 0;
+  const totalsEl = $('batchTotals');
+  if (job.processed > 0) {
+    totalsEl.textContent =
+      `Sum of per-profile runtime: ${formatSeconds(sumProfile)} · ` +
+      `Total batch runtime (incl. delays): ${formatSeconds(batchWall)}` +
+      (job.status === 'done' || job.status === 'cancelled'
+        ? ' — also written as a summary row at the end of gindex_dataset.xlsx.'
+        : '');
+  } else {
+    totalsEl.textContent = '';
+  }
+}
+
+async function pollBatchStatus(jobId) {
+  try {
+    const resp = await fetch(`/api/batch_status/${jobId}`);
+    const data = await resp.json();
+    if (!data.ok) {
+      clearInterval(batchPollTimer);
+      $('batchProgressText').textContent = data.message || 'Lost track of the batch job.';
+      $('batchStartBtn').disabled = false;
+      $('batchCancelBtn').disabled = true;
+      return;
+    }
+    renderBatchProgress(data.job);
+    if (data.job.status === 'done' || data.job.status === 'cancelled') {
+      clearInterval(batchPollTimer);
+      $('batchStartBtn').disabled = false;
+      $('batchCancelBtn').disabled = true;
+    }
+  } catch (err) {
+    // transient network hiccup while polling; keep trying on the next tick
+  }
+}
+
+async function startBatch() {
+  const raw = $('batchUrls').value;
+  const urls = raw.split('\n').map((s) => s.trim()).filter(Boolean);
+  if (!urls.length) {
+    alert('Paste at least one Google Scholar profile URL first.');
+    return;
+  }
+  if (urls.length > 1000) {
+    alert('This tool caps a single batch at 1000 URLs. Split the list into smaller batches.');
+    return;
+  }
+
+  const ollamaUrl = $('ollamaUrlInput').value.trim() || 'http://localhost:11434';
+  const ollamaModel = $('modelInput').value.trim();
+  const resolveTruncated = $('batchResolveTruncated').checked;
+  const delaySeconds = parseFloat($('batchDelay').value) || 5;
+
+  $('batchStartBtn').disabled = true;
+  $('batchCancelBtn').disabled = false;
+  $('batchProgressWrap').style.display = 'block';
+  $('batchProgressText').textContent = `Starting batch of ${urls.length} profile(s)…`;
+  $('batchResultsBody').innerHTML = '';
+  $('batchProgressFill').style.width = '0%';
+
+  try {
+    const resp = await fetch('/api/batch_start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        urls,
+        ollama_url: ollamaUrl,
+        ollama_model: ollamaModel,
+        use_ai: !!ollamaModel,
+        resolve_truncated: resolveTruncated,
+        delay_seconds: delaySeconds,
+      }),
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+      $('batchProgressText').textContent = data.message || 'Could not start batch job.';
+      $('batchStartBtn').disabled = false;
+      $('batchCancelBtn').disabled = true;
+      return;
+    }
+    const jobId = data.job_id;
+    batchPollTimer = setInterval(() => pollBatchStatus(jobId), 2000);
+    pollBatchStatus(jobId);
+    $('batchCancelBtn').onclick = async () => {
+      $('batchCancelBtn').disabled = true;
+      await fetch(`/api/batch_cancel/${jobId}`, { method: 'POST' });
+    };
+  } catch (err) {
+    $('batchProgressText').textContent = 'Could not reach the server: ' + err.message;
+    $('batchStartBtn').disabled = false;
+    $('batchCancelBtn').disabled = true;
+  }
+}
+
+$('batchStartBtn').addEventListener('click', startBatch);

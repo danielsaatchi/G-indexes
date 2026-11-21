@@ -40,6 +40,42 @@
   </div>
 </div>
 
+<div class="gs-main">
+  <details class="batch-card">
+    <summary>Batch Dataset Builder — process many Scholar profiles automatically</summary>
+    <div class="batch-body">
+      <p class="hint">
+        Paste one Google Scholar profile URL per line (up to 1000 per batch).
+        Each one is fetched, analyzed with the same model/settings above, and
+        appended as a row to <code>gindex_dataset.xlsx</code> — no manual
+        clicking per profile. Start small: 5–10 while you're testing timing
+        and your Ollama model's throughput, since 1000 profiles run
+        sequentially and can take hours.
+      </p>
+      <textarea id="batchUrls" placeholder="https://scholar.google.com/citations?user=AAAA&hl=en&#10;https://scholar.google.com/citations?user=BBBB&hl=en&#10;..."></textarea>
+      <div class="batch-controls">
+        <label class="toolbar-label">Delay between profiles (seconds):
+          <input id="batchDelay" type="number" min="1" value="5" style="width:60px;">
+        </label>
+        <label class="toolbar-label" style="display:flex;align-items:center;gap:4px;">
+          <input id="batchResolveTruncated" type="checkbox"> resolve truncated author lists
+        </label>
+        <button id="batchStartBtn">Start batch</button>
+        <button id="batchCancelBtn" class="secondary" disabled>Cancel</button>
+      </div>
+      <div id="batchProgressWrap" class="batch-progress-wrap" style="display:none;">
+        <div class="batch-progress-bar"><div id="batchProgressFill" class="batch-progress-fill"></div></div>
+        <div id="batchProgressText" class="hint"></div>
+        <table class="batch-results-table">
+          <thead><tr><th>#</th><th>Profile</th><th>Result</th><th>Runtime</th></tr></thead>
+          <tbody id="batchResultsBody"></tbody>
+        </table>
+        <div id="batchTotals" class="hint batch-totals"></div>
+      </div>
+    </div>
+  </details>
+</div>
+
 <div id="profileSection" class="gs-main" style="display:none;">
 
   <div class="profile-row">

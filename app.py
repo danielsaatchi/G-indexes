@@ -22,8 +22,10 @@ Then open http://localhost:5000
 
 import os
 import re
+import threading
 import time
 import unicodedata
+import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qs, urljoin
 
@@ -33,6 +35,12 @@ from flask import Flask, render_template, request, jsonify, send_file
 from openpyxl import Workbook, load_workbook
 
 app = Flask(__name__)
+
+# In-memory registry of running/completed batch jobs. Fine for a single-user
+# local tool; not meant to survive a server restart.
+BATCH_JOBS = {}
+BATCH_JOBS_LOCK = threading.Lock()
+MAX_BATCH_URLS = 1000
 
 DATASET_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gindex_dataset.xlsx")
 DATASET_COLUMNS = [
@@ -54,6 +62,8 @@ DATASET_COLUMNS = [
     "Country",
     "Country Source",
     "Snapshot Date (UTC)",
+    "Profile Runtime (s)",
+    "Batch Total Runtime (s)",
 ]
 
 SCHOLAR_BASE = "https://scholar.google.com"
@@ -225,17 +235,14 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/api/profile")
-def api_profile():
-    scholar_url = request.args.get("url", "").strip()
-    resolve_truncated = request.args.get("resolve_truncated", "false") == "true"
-    if not scholar_url:
-        return jsonify(ok=False, message="Missing Google Scholar URL."), 400
-
+def fetch_scholar_profile(scholar_url: str, resolve_truncated: bool = False):
+    """Core profile-scrape logic, shared by the single-profile route and the
+    batch job runner. Returns a dict with ok/message on failure, or ok=True
+    plus the full profile payload on success."""
     try:
         user_id = extract_user_id(scholar_url)
     except ValueError as e:
-        return jsonify(ok=False, message=str(e)), 400
+        return {"ok": False, "message": str(e), "status": 400}
 
     session = requests.Session()
     all_pubs = []
@@ -272,13 +279,14 @@ def api_profile():
             time.sleep(0.5)  # be polite between paginated requests
 
         if not name:
-            return jsonify(
-                ok=False,
-                message=(
+            return {
+                "ok": False,
+                "status": 404,
+                "message": (
                     "Could not find a profile for that user ID. Double-check the "
                     "Scholar URL, or the profile may be private."
                 ),
-            ), 404
+            }
 
         if resolve_truncated:
             fetch_count = 0
@@ -292,21 +300,34 @@ def api_profile():
                     time.sleep(1)
 
     except RuntimeError as e:
-        return jsonify(ok=False, message=str(e)), 429
+        return {"ok": False, "status": 429, "message": str(e)}
     except requests.RequestException as e:
-        return jsonify(ok=False, message=f"Network error reaching Google Scholar: {e}"), 502
+        return {"ok": False, "status": 502, "message": f"Network error reaching Google Scholar: {e}"}
 
-    return jsonify(
-        ok=True,
-        name=name,
-        affiliation=affiliation,
-        interests=interests,
-        scholar_url=f"{SCHOLAR_BASE}/citations?user={user_id}&hl=en",
-        photo_proxy_url=f"/api/photo?user={user_id}" if photo_url else None,
-        stats=stats,
-        citations_by_year=citations_by_year,
-        publications=all_pubs,
-    )
+    return {
+        "ok": True,
+        "name": name,
+        "affiliation": affiliation,
+        "interests": interests,
+        "scholar_url": f"{SCHOLAR_BASE}/citations?user={user_id}&hl=en",
+        "photo_proxy_url": f"/api/photo?user={user_id}" if photo_url else None,
+        "stats": stats,
+        "citations_by_year": citations_by_year,
+        "publications": all_pubs,
+    }
+
+
+@app.route("/api/profile")
+def api_profile():
+    scholar_url = request.args.get("url", "").strip()
+    resolve_truncated = request.args.get("resolve_truncated", "false") == "true"
+    if not scholar_url:
+        return jsonify(ok=False, message="Missing Google Scholar URL."), 400
+
+    result = fetch_scholar_profile(scholar_url, resolve_truncated)
+    if not result["ok"]:
+        return jsonify(ok=False, message=result["message"]), result.get("status", 500)
+    return jsonify(result)
 
 
 @app.route("/api/debug_graph")
@@ -686,18 +707,9 @@ def ask_ollama_positions(ollama_url, model, author_name, pubs):
         return None, f"ollama unavailable ({e}); using heuristic matching only"
 
 
-@app.route("/api/analyze", methods=["POST"])
-def api_analyze():
-    body = request.get_json(force=True)
-    author_name = body.get("author_name", "").strip()
-    ollama_url = body.get("ollama_url", "http://localhost:11434").strip()
-    ollama_model = body.get("ollama_model", "").strip()
-    use_ai = body.get("use_ai", True)
-    publications = body.get("publications", [])
-
-    if not author_name:
-        return jsonify(ok=False, message="Missing author name."), 400
-
+def compute_profile_metrics(author_name, publications, ollama_url, ollama_model, use_ai):
+    """Core G1/G2/G3/GRW computation, shared by the single-profile analyze
+    route and the batch job runner."""
     heuristic_positions = [
         heuristic_position(author_name, p.get("authors", "")) for p in publications
     ]
@@ -778,12 +790,11 @@ def api_analyze():
         for i, p in enumerate(publications)
     ]
 
-    return jsonify(
-        ok=True,
-        ai_status=ai_status,
-        review_status=review_status,
-        results=results,
-        metrics={
+    return {
+        "ai_status": ai_status,
+        "review_status": review_status,
+        "results": results,
+        "metrics": {
             "total_citations": total_citations,
             "hindex": h,
             "i10index": i10,
@@ -794,23 +805,32 @@ def api_analyze():
             "review_count": review_count,
             "publication_count": len(publications),
         },
-    )
+    }
 
 
-@app.route("/api/export_row", methods=["POST"])
-def api_export_row():
+@app.route("/api/analyze", methods=["POST"])
+def api_analyze():
     body = request.get_json(force=True)
     author_name = body.get("author_name", "").strip()
-    scholar_url = body.get("scholar_url", "").strip()
-    affiliation = body.get("affiliation", "").strip()
     ollama_url = body.get("ollama_url", "http://localhost:11434").strip()
     ollama_model = body.get("ollama_model", "").strip()
-    use_ai = body.get("use_ai", False)
-    metrics = body.get("metrics", {})
+    use_ai = body.get("use_ai", True)
+    publications = body.get("publications", [])
 
     if not author_name:
         return jsonify(ok=False, message="Missing author name."), 400
 
+    result = compute_profile_metrics(author_name, publications, ollama_url, ollama_model, use_ai)
+    return jsonify(ok=True, **result)
+
+
+def build_and_append_row(
+    author_name, scholar_url, affiliation, metrics, ollama_url, ollama_model, use_ai,
+    elapsed_seconds=None, batch_total_seconds=None,
+):
+    """Build one dataset row from a computed-metrics dict and append it to
+    the cumulative workbook. Shared by the single-profile export route and
+    the batch job runner."""
     def pct(part, total):
         total = total or 0
         return round((part / total) * 100, 1) if total else 0
@@ -847,21 +867,71 @@ def api_export_row():
         country,
         country_source,
         snapshot,
+        round(elapsed_seconds, 2) if elapsed_seconds is not None else "",
+        round(batch_total_seconds, 2) if batch_total_seconds is not None else "",
     ]
+    row_count = append_dataset_row(row)
+    return {
+        "row_count": row_count,
+        "detected_title": title_detected,
+        "country": country,
+        "country_source": country_source,
+    }
+
+
+def append_dataset_summary_row(label, sum_elapsed_seconds, total_wall_seconds, profile_count):
+    """Append a visually distinct summary row (bold, shaded) totalling the
+    per-profile compute time and the batch's overall wall-clock time,
+    including the inter-profile delays."""
+    if os.path.exists(DATASET_PATH):
+        wb = load_workbook(DATASET_PATH)
+        ws = wb.active
+    else:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Researcher Profiles"
+        ws.append(DATASET_COLUMNS)
+
+    row = [""] * len(DATASET_COLUMNS)
+    row[0] = f"{label} ({profile_count} profiles)"
+    row[-2] = round(sum_elapsed_seconds, 2)
+    row[-1] = round(total_wall_seconds, 2)
+    ws.append(row)
+
+    from openpyxl.styles import Font, PatternFill
+    last_row = ws.max_row
+    for cell in ws[last_row]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill(start_color="FFF1C2", end_color="FFF1C2", fill_type="solid")
+
+    wb.save(DATASET_PATH)
+    return last_row - 1
+
+
+@app.route("/api/export_row", methods=["POST"])
+def api_export_row():
+    body = request.get_json(force=True)
+    author_name = body.get("author_name", "").strip()
+    scholar_url = body.get("scholar_url", "").strip()
+    affiliation = body.get("affiliation", "").strip()
+    ollama_url = body.get("ollama_url", "http://localhost:11434").strip()
+    ollama_model = body.get("ollama_model", "").strip()
+    use_ai = body.get("use_ai", False)
+    metrics = body.get("metrics", {})
+    elapsed_seconds = body.get("elapsed_seconds")
+
+    if not author_name:
+        return jsonify(ok=False, message="Missing author name."), 400
 
     try:
-        row_count = append_dataset_row(row)
+        result = build_and_append_row(
+            author_name, scholar_url, affiliation, metrics, ollama_url, ollama_model, use_ai,
+            elapsed_seconds=elapsed_seconds,
+        )
     except Exception as e:
         return jsonify(ok=False, message=f"Could not write to dataset file: {e}"), 500
 
-    return jsonify(
-        ok=True,
-        row_count=row_count,
-        dataset_path=DATASET_PATH,
-        detected_title=title_detected,
-        country=country,
-        country_source=country_source,
-    )
+    return jsonify(ok=True, dataset_path=DATASET_PATH, **result)
 
 
 @app.route("/api/export_download")
@@ -874,6 +944,173 @@ def api_export_download():
         download_name="gindex_dataset.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+def _extract_author_name(scholar_url, profile_result):
+    """Author name as the dataset wants it: whatever Scholar's own profile
+    page gave back, since that's what compute_profile_metrics matches
+    authorship position against."""
+    return profile_result.get("name") or scholar_url
+
+
+def run_batch_job(job_id, urls, ollama_url, ollama_model, use_ai, resolve_truncated, delay_seconds):
+    job = BATCH_JOBS[job_id]
+    job["status"] = "running"
+    job["started_at"] = datetime.now(timezone.utc).isoformat()
+    batch_wall_start = time.monotonic()
+    sum_profile_seconds = 0.0
+
+    for idx, url in enumerate(urls):
+        if job.get("cancel_requested"):
+            job["status"] = "cancelled"
+            break
+
+        item = {
+            "url": url,
+            "name": None,
+            "ok": False,
+            "message": "",
+            "metrics": None,
+            "elapsed_seconds": None,
+        }
+        job["items"].append(item)
+        job["current_index"] = idx
+
+        profile_start = time.monotonic()
+        try:
+            profile = fetch_scholar_profile(url, resolve_truncated=resolve_truncated)
+            if not profile["ok"]:
+                item["message"] = profile["message"]
+                job["failed"] += 1
+            else:
+                author_name = _extract_author_name(url, profile)
+                item["name"] = author_name
+
+                analysis = compute_profile_metrics(
+                    author_name,
+                    profile["publications"],
+                    ollama_url,
+                    ollama_model,
+                    use_ai,
+                )
+
+                elapsed_for_row = time.monotonic() - profile_start
+
+                row_info = build_and_append_row(
+                    author_name,
+                    profile["scholar_url"],
+                    profile.get("affiliation", ""),
+                    analysis["metrics"],
+                    ollama_url,
+                    ollama_model,
+                    use_ai,
+                    elapsed_seconds=elapsed_for_row,
+                )
+
+                item["ok"] = True
+                item["metrics"] = analysis["metrics"]
+                item["country"] = row_info["country"]
+                item["detected_title"] = row_info["detected_title"]
+                item["message"] = f"Saved as dataset row {row_info['row_count']} ({elapsed_for_row:.1f}s)."
+                job["succeeded"] += 1
+
+        except Exception as e:
+            item["message"] = f"Unexpected error: {e}"
+            job["failed"] += 1
+
+        finally:
+            elapsed = time.monotonic() - profile_start
+            item["elapsed_seconds"] = round(elapsed, 2)
+            sum_profile_seconds += elapsed
+            job["processed"] = idx + 1
+            job["sum_profile_elapsed_seconds"] = round(sum_profile_seconds, 2)
+            job["batch_elapsed_seconds"] = round(time.monotonic() - batch_wall_start, 2)
+
+        if idx < len(urls) - 1 and not job.get("cancel_requested"):
+            time.sleep(delay_seconds)
+
+    if job["status"] == "running":
+        job["status"] = "done"
+    job["finished_at"] = datetime.now(timezone.utc).isoformat()
+    job["batch_elapsed_seconds"] = round(time.monotonic() - batch_wall_start, 2)
+    job["sum_profile_elapsed_seconds"] = round(sum_profile_seconds, 2)
+
+    if job["processed"] > 0:
+        try:
+            summary_label = "BATCH SUMMARY" if job["status"] == "done" else f"BATCH SUMMARY ({job['status'].upper()})"
+            append_dataset_summary_row(
+                summary_label,
+                sum_profile_seconds,
+                job["batch_elapsed_seconds"],
+                job["processed"],
+            )
+        except Exception as e:
+            job["summary_row_error"] = str(e)
+
+
+@app.route("/api/batch_start", methods=["POST"])
+def api_batch_start():
+    body = request.get_json(force=True)
+    urls = [u.strip() for u in body.get("urls", []) if u.strip()]
+    ollama_url = body.get("ollama_url", "http://localhost:11434").strip()
+    ollama_model = body.get("ollama_model", "").strip()
+    use_ai = body.get("use_ai", False)
+    resolve_truncated = body.get("resolve_truncated", False)
+    delay_seconds = body.get("delay_seconds", 3)
+
+    if not urls:
+        return jsonify(ok=False, message="No Google Scholar URLs provided."), 400
+    if len(urls) > MAX_BATCH_URLS:
+        return jsonify(
+            ok=False,
+            message=f"Too many URLs ({len(urls)}). This tool caps a single batch at {MAX_BATCH_URLS}.",
+        ), 400
+    try:
+        delay_seconds = max(1.0, float(delay_seconds))
+    except (TypeError, ValueError):
+        delay_seconds = 3.0
+
+    job_id = uuid.uuid4().hex
+    with BATCH_JOBS_LOCK:
+        BATCH_JOBS[job_id] = {
+            "id": job_id,
+            "status": "queued",
+            "total": len(urls),
+            "processed": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "current_index": -1,
+            "items": [],
+            "cancel_requested": False,
+            "sum_profile_elapsed_seconds": 0.0,
+            "batch_elapsed_seconds": 0.0,
+        }
+
+    thread = threading.Thread(
+        target=run_batch_job,
+        args=(job_id, urls, ollama_url, ollama_model, use_ai, resolve_truncated, delay_seconds),
+        daemon=True,
+    )
+    thread.start()
+
+    return jsonify(ok=True, job_id=job_id, total=len(urls))
+
+
+@app.route("/api/batch_status/<job_id>")
+def api_batch_status(job_id):
+    job = BATCH_JOBS.get(job_id)
+    if not job:
+        return jsonify(ok=False, message="Unknown job id."), 404
+    return jsonify(ok=True, job=job)
+
+
+@app.route("/api/batch_cancel/<job_id>", methods=["POST"])
+def api_batch_cancel(job_id):
+    job = BATCH_JOBS.get(job_id)
+    if not job:
+        return jsonify(ok=False, message="Unknown job id."), 404
+    job["cancel_requested"] = True
+    return jsonify(ok=True)
 
 
 if __name__ == "__main__":
